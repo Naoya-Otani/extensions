@@ -1,5 +1,10 @@
 # Slack Changelog
 
+## [Fix Set Status crash in large workspaces] - {PR_MERGE_DATE}
+
+- Fix a "Command terminated after reaching the extension memory limit" crash in the **Set Status** command. The workspace emoji catalog is no longer loaded when the command opens — it is fetched only once the emoji picker or the status form is opened, or when the current status uses a custom emoji.
+- Render the emoji picker and the status form's emoji dropdown in bounded slices instead of building an item for every custom emoji, with a "Show More" item in the picker.
+
 ## [Fix Search Emojis crash in large workspaces] - 2026-08-12
 
 - Fix a "Worker terminated due to reaching memory limit: JS heap out of memory" crash in the Search Emojis command by rendering emojis in slices with a "Show More" item instead of rendering every custom emoji at once.

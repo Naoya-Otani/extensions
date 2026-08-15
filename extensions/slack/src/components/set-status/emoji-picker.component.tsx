@@ -1,34 +1,37 @@
-import { Action, ActionPanel, List, useNavigation } from "@raycast/api";
-import { Emoji } from "../../types/emoji.type";
-import { useMemo, useState } from "react";
+import { Action, ActionPanel, Icon, List, useNavigation } from "@raycast/api";
+import { useCallback, useMemo, useState } from "react";
+import { EMOJI_SEARCH_LIMIT, type EmojiEntry, useEmojiCatalog } from "../../shared/client";
 
 interface EmojiPickerProps {
-  emojis: Emoji;
-  onSelect: (emoji: { name: string; value: string }) => void;
+  onSelect: (emoji: EmojiEntry) => void;
 }
 
-function EmojiPicker({ emojis, onSelect }: EmojiPickerProps) {
+function EmojiPicker({ onSelect }: EmojiPickerProps) {
   const { pop } = useNavigation();
 
   const [searchText, setSearchText] = useState("");
+  const [limit, setLimit] = useState(EMOJI_SEARCH_LIMIT);
 
-  const emojiEntries = useMemo(() => {
-    return Object.entries(emojis).map(([name, value]) => ({
-      name,
-      value,
-    }));
-  }, [emojis]);
+  // This component is only mounted once pushed, so the workspace emoji fetch starts here rather
+  // than when the Set Status command opens.
+  const { isLoading, search } = useEmojiCatalog({ includeStandard: true });
 
-  const filtered = useMemo(() => {
-    const normalized = searchText.replace(/^:/, "").toLowerCase();
-    if (!normalized) return emojiEntries;
+  const { items, total } = useMemo(() => search(searchText, limit), [search, searchText, limit]);
+  const hiddenCount = total - items.length;
 
-    return emojiEntries.filter((emoji) => emoji.name.toLowerCase().includes(normalized));
-  }, [searchText, emojiEntries]);
+  const handleSearchTextChange = useCallback((text: string) => {
+    setSearchText(text);
+    setLimit(EMOJI_SEARCH_LIMIT);
+  }, []);
 
   return (
-    <List onSearchTextChange={setSearchText} searchBarPlaceholder={"Search emoji (e.g. :smile)"} throttle>
-      {filtered.map((emoji) => (
+    <List
+      isLoading={isLoading}
+      onSearchTextChange={handleSearchTextChange}
+      searchBarPlaceholder={"Search emoji (e.g. :smile)"}
+      throttle
+    >
+      {items.map((emoji) => (
         <List.Item
           key={emoji.name}
           title={emoji.name}
@@ -46,6 +49,19 @@ function EmojiPicker({ emojis, onSelect }: EmojiPickerProps) {
           }
         />
       ))}
+
+      {hiddenCount > 0 && (
+        <List.Item
+          icon={Icon.Ellipsis}
+          title={"Show More"}
+          subtitle={`${hiddenCount} more`}
+          actions={
+            <ActionPanel>
+              <Action title={"Show More"} onAction={() => setLimit((current) => current + EMOJI_SEARCH_LIMIT)} />
+            </ActionPanel>
+          }
+        />
+      )}
     </List>
   );
 }

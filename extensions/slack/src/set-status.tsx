@@ -1,5 +1,5 @@
 import { showFailureToast, useCachedPromise } from "@raycast/utils";
-import { SlackClient, useMe } from "./shared/client";
+import { type EmojiEntry, SlackClient, useEmojiCatalog, useMe } from "./shared/client";
 import { withSlackClient } from "./shared/withSlackClient";
 import { Action, ActionPanel, closeMainWindow, Icon, LaunchProps, List, popToRoot } from "@raycast/api";
 import { SLACK_EMOJI_CODE_MAP } from "./constants/emoji.constants";
@@ -76,28 +76,30 @@ function SlackStatusList(props: LaunchProps<{ arguments: Arguments.SetStatus }>)
       execute: !!me?.id,
     },
   );
-  const { data: workspaceEmojis, isLoading: isFetchWorkspaceEmojisLoading } = useCachedPromise(
-    SlackClient.getWorkspaceEmojis,
-  );
+  const currentStatusEmojiName = (profile?.status_emoji ?? "").trim();
+
+  // Showing the current status only needs one name resolved, and a standard emoji resolves from the
+  // bundled map with no request at all. Fetching the workspace catalog here — tens of thousands of
+  // entries in large workspaces — is what exhausted the heap before the emoji picker was ever opened,
+  // so it is limited to the case that genuinely needs it: a custom emoji.
+  const needsWorkspaceEmojis = Boolean(currentStatusEmojiName) && !(currentStatusEmojiName in SLACK_EMOJI_CODE_MAP);
+
+  const { isLoading: isFetchWorkspaceEmojisLoading, lookup } = useEmojiCatalog({
+    execute: needsWorkspaceEmojis,
+    includeStandard: true,
+  });
 
   const isLoading = useMemo(() => {
     return isFetchProfileLoading || isFetchMeLoading || isFetchWorkspaceEmojisLoading;
   }, [isFetchProfileLoading, isFetchMeLoading, isFetchWorkspaceEmojisLoading]);
 
-  const emojis: { [key: string]: string } = useMemo(() => {
-    return {
-      ...workspaceEmojis,
-      ...SLACK_EMOJI_CODE_MAP,
-    };
-  }, [workspaceEmojis]);
-
   const currentStatusEmoji = useMemo(() => {
-    if (!profile?.status_emoji) {
+    if (!currentStatusEmojiName) {
       return undefined;
     }
 
-    return emojis[profile.status_emoji];
-  }, [profile?.status_emoji, emojis]);
+    return lookup(currentStatusEmojiName);
+  }, [currentStatusEmojiName, lookup]);
 
   const getCurrentStatusText = useCallback(
     (defaultStatusText?: string) => {
@@ -172,7 +174,7 @@ function SlackStatusList(props: LaunchProps<{ arguments: Arguments.SetStatus }>)
   );
 
   const handleEmojiChange = useCallback(
-    async (emoji: { name: string; value: string }) => {
+    async (emoji: EmojiEntry) => {
       await showToastWithPromise(
         async () => {
           await SlackClient.setStatus({
@@ -316,7 +318,6 @@ function SlackStatusList(props: LaunchProps<{ arguments: Arguments.SetStatus }>)
                 title={"Open Status Form"}
                 target={
                   <StatusForm
-                    emojis={emojis}
                     formInitialValues={{
                       statusText: getCurrentStatusText(),
                       emoji: getCurrentStatusEmojiName(),
@@ -336,10 +337,7 @@ function SlackStatusList(props: LaunchProps<{ arguments: Arguments.SetStatus }>)
           icon={"😁"}
           actions={
             <ActionPanel>
-              <Action.Push
-                title={"Choose Emoji"}
-                target={<EmojiPicker emojis={emojis} onSelect={handleEmojiChange} />}
-              />
+              <Action.Push title={"Choose Emoji"} target={<EmojiPicker onSelect={handleEmojiChange} />} />
             </ActionPanel>
           }
         />

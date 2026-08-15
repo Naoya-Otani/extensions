@@ -1,8 +1,8 @@
 import { FormValidation, useForm } from "@raycast/utils";
-import { Emoji } from "../../types/emoji.type";
 import { Action, ActionPanel, Form, useNavigation } from "@raycast/api";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { getExpirationTimestamp } from "../../utils/set-status/expiration.util";
+import { EMOJI_SEARCH_LIMIT, useEmojiCatalog } from "../../shared/client";
 
 type SlackStatusForm = {
   statusText: string;
@@ -13,7 +13,6 @@ type SlackStatusForm = {
 };
 
 interface StatusFormProps {
-  emojis: Emoji;
   formInitialValues: SlackStatusForm;
   onSubmit: (form: SlackStatusForm) => void;
 }
@@ -28,9 +27,14 @@ const DURATION_OPTIONS = [
   { value: "custom", title: "Choose" },
 ];
 
-function StatusForm({ emojis, formInitialValues, onSubmit }: StatusFormProps) {
+function StatusForm({ formInitialValues, onSubmit }: StatusFormProps) {
   const { pop } = useNavigation();
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(formInitialValues.duration === "custom");
+  const [emojiSearchText, setEmojiSearchText] = useState("");
+  const [selectedEmoji, setSelectedEmoji] = useState(formInitialValues.emoji);
+
+  // Pushed from the Set Status list, so the workspace emoji fetch starts when this form mounts.
+  const { isLoading: isLoadingEmojis, lookup, search } = useEmojiCatalog({ includeStandard: true });
 
   const { handleSubmit, itemProps, setValidationError } = useForm<SlackStatusForm>({
     initialValues: formInitialValues,
@@ -61,20 +65,46 @@ function StatusForm({ emojis, formInitialValues, onSubmit }: StatusFormProps) {
   });
 
   const { onChange: formOnChange, ...restDurationProps } = itemProps.duration;
+  const { onChange: emojiFormOnChange, ...restEmojiProps } = itemProps.emoji;
+
+  const emojiOptions = useMemo(() => {
+    const { items } = search(emojiSearchText, EMOJI_SEARCH_LIMIT);
+
+    // A Dropdown drops its value when the matching item disappears, so the current selection is
+    // kept in the list even while a search excludes it.
+    if (!selectedEmoji || items.some((item) => item.name === selectedEmoji)) {
+      return items;
+    }
+
+    return [{ name: selectedEmoji, value: lookup(selectedEmoji) ?? "" }, ...items];
+  }, [search, emojiSearchText, selectedEmoji, lookup]);
 
   return (
     <Form
       navigationTitle={"Set Status"}
+      isLoading={isLoadingEmojis}
       actions={
         <ActionPanel>
           <Action.SubmitForm title={"Save Status"} onSubmit={handleSubmit} />
         </ActionPanel>
       }
     >
-      <Form.Dropdown {...itemProps.emoji} title={"Emoji"}>
-        {Object.entries(emojis).map(([key, value]) => {
-          return <Form.Dropdown.Item key={key} icon={value} title={key} value={key} />;
-        })}
+      <Form.Dropdown
+        {...restEmojiProps}
+        title={"Emoji"}
+        filtering={false}
+        onSearchTextChange={setEmojiSearchText}
+        onChange={(value) => {
+          setSelectedEmoji(value);
+
+          if (emojiFormOnChange) {
+            emojiFormOnChange(value);
+          }
+        }}
+      >
+        {emojiOptions.map((emoji) => (
+          <Form.Dropdown.Item key={emoji.name} icon={emoji.value || undefined} title={emoji.name} value={emoji.name} />
+        ))}
       </Form.Dropdown>
 
       <Form.TextField {...itemProps.statusText} title={"Status Text"} placeholder={"What are you working on?"} />
