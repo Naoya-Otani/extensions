@@ -1,15 +1,95 @@
-import { Action, ActionPanel, Color, Icon, List } from "@raycast/api";
+import { Action, ActionPanel, Color, Icon, Image, List } from "@raycast/api";
 import { useCachedPromise, useCachedState } from "@raycast/utils";
 import { format, formatDistanceToNow } from "date-fns";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import * as emoji from "node-emoji";
 import { SendMessage } from "./send-message";
 
 import { withSlackClient } from "./shared/withSlackClient";
 import { getSlackWebClient } from "./shared/client/WebClient";
 import { convertTimestampToDate, handleError } from "./shared/utils";
-import { useChannels, useMe } from "./shared/client";
+import { useChannels, useMe, type User } from "./shared/client";
+import { usePagedItems } from "./shared/usePaging";
 import { SearchMessagesArguments } from "@slack/web-api";
+
+const FROM_PAGE_SIZE = 100;
+
+/**
+ * The "From" submenu is attached to the list *and* to every result, so every action it renders is
+ * built once per result. Listing every workspace member there is what pushed large workspaces over
+ * the extension's memory limit — tens of thousands of members multiplied by the number of results.
+ * The members are now narrowed by the submenu's own search field and rendered a page at a time.
+ */
+function FromActions({
+  users,
+  meIcon,
+  query,
+  onQueryChange,
+}: {
+  users: User[] | undefined;
+  meIcon: Image.ImageLike | undefined;
+  query: string;
+  onQueryChange: (query: string) => void;
+}) {
+  const [userSearchText, setUserSearchText] = useState("");
+
+  const matches = useMemo(() => {
+    if (!users) {
+      return [];
+    }
+
+    const normalized = userSearchText.trim().toLowerCase();
+
+    if (!normalized) {
+      return users;
+    }
+
+    return users.filter((user) => user.name.toLowerCase().includes(normalized));
+  }, [users, userSearchText]);
+
+  const { visible, hiddenCount, showMore, reset } = usePagedItems(matches, FROM_PAGE_SIZE);
+
+  const handleUserSearchTextChange = useCallback(
+    (text: string) => {
+      setUserSearchText(text);
+      reset();
+    },
+    [reset],
+  );
+
+  return (
+    <>
+      <Action
+        title="From Me Only"
+        icon={meIcon}
+        shortcut={{ modifiers: ["cmd", "shift"], key: "i" }}
+        onAction={() => onQueryChange(query ? `from:me ${query}` : "from:me ")}
+      />
+
+      <ActionPanel.Submenu
+        icon={Icon.Person}
+        title="From"
+        shortcut={{ modifiers: ["cmd", "shift"], key: "u" }}
+        onSearchTextChange={handleUserSearchTextChange}
+        filtering={false}
+        throttle
+      >
+        {visible.map((user) => (
+          <Action
+            key={user.id}
+            title={user.name}
+            icon={user.icon}
+            onAction={() => onQueryChange(query ? `from:<@${user.id}> ${query}` : `from:<@${user.id}> `)}
+          />
+        ))}
+
+        {hiddenCount > 0 && (
+          <Action icon={Icon.Ellipsis} title={`Show More (${hiddenCount} more)`} onAction={showMore} />
+        )}
+      </ActionPanel.Submenu>
+    </>
+  );
+}
 
 function Search() {
   const [query, setQuery] = useState("");
@@ -49,28 +129,6 @@ function Search() {
     { title: "Most Relevant", sort: "score" },
   ];
 
-  const FromActions = () => (
-    <>
-      <Action
-        title="From Me Only"
-        icon={meInfo ? meInfo.icon : Icon.Person}
-        shortcut={{ modifiers: ["cmd", "shift"], key: "i" }}
-        onAction={() => setQuery(query ? `from:me ${query}` : "from:me ")}
-      />
-
-      <ActionPanel.Submenu icon={Icon.Person} title="From" shortcut={{ modifiers: ["cmd", "shift"], key: "u" }}>
-        {users?.map((u) => (
-          <Action
-            key={u.id}
-            title={u.name}
-            icon={u.icon}
-            onAction={() => setQuery(query ? `from:<@${u.id}> ${query}` : `from:<@${u.id}> `)}
-          />
-        ))}
-      </ActionPanel.Submenu>
-    </>
-  );
-
   return (
     <List
       isLoading={isLoading}
@@ -78,7 +136,12 @@ function Search() {
       onSearchTextChange={setQuery}
       actions={
         <ActionPanel>
-          <FromActions />
+          <FromActions
+            users={users}
+            meIcon={meInfo ? meInfo.icon : Icon.Person}
+            query={query}
+            onQueryChange={setQuery}
+          />
         </ActionPanel>
       }
       throttle
@@ -179,7 +242,12 @@ function Search() {
                     ))}
                   </ActionPanel.Submenu>
 
-                  <FromActions />
+                  <FromActions
+                    users={users}
+                    meIcon={meInfo ? meInfo.icon : Icon.Person}
+                    query={query}
+                    onQueryChange={setQuery}
+                  />
                 </ActionPanel.Section>
               </ActionPanel>
             }

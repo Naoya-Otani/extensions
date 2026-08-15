@@ -1,6 +1,7 @@
 import { Action, ActionPanel, Icon, List, useNavigation } from "@raycast/api";
 import { useCallback, useMemo, useState } from "react";
 import { EMOJI_SEARCH_LIMIT, type EmojiEntry, useEmojiCatalog } from "../../shared/client";
+import { usePaging } from "../../shared/usePaging";
 
 interface EmojiPickerProps {
   onSelect: (emoji: EmojiEntry) => void;
@@ -10,7 +11,7 @@ function EmojiPicker({ onSelect }: EmojiPickerProps) {
   const { pop } = useNavigation();
 
   const [searchText, setSearchText] = useState("");
-  const [limit, setLimit] = useState(EMOJI_SEARCH_LIMIT);
+  const { limit, showMore, reset } = usePaging(EMOJI_SEARCH_LIMIT);
 
   // This component is only mounted once pushed, so the workspace emoji fetch starts here rather
   // than when the Set Status command opens.
@@ -19,10 +20,13 @@ function EmojiPicker({ onSelect }: EmojiPickerProps) {
   const { items, total } = useMemo(() => search(searchText, limit), [search, searchText, limit]);
   const hiddenCount = total - items.length;
 
-  const handleSearchTextChange = useCallback((text: string) => {
-    setSearchText(text);
-    setLimit(EMOJI_SEARCH_LIMIT);
-  }, []);
+  const handleSearchTextChange = useCallback(
+    (text: string) => {
+      setSearchText(text);
+      reset();
+    },
+    [reset],
+  );
 
   return (
     <List
@@ -57,7 +61,7 @@ function EmojiPicker({ onSelect }: EmojiPickerProps) {
           subtitle={`${hiddenCount} more`}
           actions={
             <ActionPanel>
-              <Action title={"Show More"} onAction={() => setLimit((current) => current + EMOJI_SEARCH_LIMIT)} />
+              <Action title={"Show More"} onAction={showMore} />
             </ActionPanel>
           }
         />

@@ -3,6 +3,7 @@ import { Action, ActionPanel, Grid, Icon, AI, environment } from "@raycast/api";
 import { useAI, useCachedPromise } from "@raycast/utils";
 import { withSlackClient } from "./shared/withSlackClient";
 import { SlackClient } from "./shared/client";
+import { usePagedItems } from "./shared/usePaging";
 
 const DISPLAY_LIMIT = 1000;
 
@@ -23,7 +24,6 @@ function EmojiItem({ name, url }: { name: string; url: string }) {
 
 function Command() {
   const [searchText, setSearchText] = useState("");
-  const [displayLimit, setDisplayLimit] = useState(DISPLAY_LIMIT);
 
   const { data, isLoading } = useCachedPromise(SlackClient.getWorkspaceEmojis);
 
@@ -35,8 +35,16 @@ function Command() {
   }, [searchText, emojis]);
 
   const executeAISearch = environment.canAccess(AI) && searchText.length > 0 && filteredEmojis.length === 0;
-  const allEmojiNames = useMemo(() => emojis.map(([name]) => name).join(", "), [emojis]);
-  const prompt = `Here is a list of all available emoji names: ${allEmojiNames}\nReturn the emoji names in the list, separated by commas and with no additional text, that best match the semantic meaning of the following description: ${searchText}\nYou should return at least one emoji name.`;
+
+  // Only the AI fallback needs every name. Joining tens of thousands of them produces a string
+  // measured in hundreds of kilobytes, so it is built solely on the path that sends it.
+  const allEmojiNames = useMemo(
+    () => (executeAISearch ? emojis.map(([name]) => name).join(", ") : ""),
+    [emojis, executeAISearch],
+  );
+  const prompt = executeAISearch
+    ? `Here is a list of all available emoji names: ${allEmojiNames}\nReturn the emoji names in the list, separated by commas and with no additional text, that best match the semantic meaning of the following description: ${searchText}\nYou should return at least one emoji name.`
+    : "";
   const { data: modelResponse, isLoading: isAILoading } = useAI(prompt, {
     model: AI.Model["OpenAI_GPT4o-mini"],
     execute: executeAISearch,
@@ -56,13 +64,15 @@ function Command() {
     return filteredEmojis;
   }, [searchText, emojis, filteredEmojis, aiEmojiEntries, executeAISearch]);
 
-  const visibleEmojis = useMemo(() => emojiEntries.slice(0, displayLimit), [emojiEntries, displayLimit]);
-  const hiddenCount = emojiEntries.length - visibleEmojis.length;
+  const { visible: visibleEmojis, hiddenCount, showMore, reset } = usePagedItems(emojiEntries, DISPLAY_LIMIT);
 
-  const handleSearchTextChange = useCallback((text: string) => {
-    setSearchText(text);
-    setDisplayLimit(DISPLAY_LIMIT);
-  }, []);
+  const handleSearchTextChange = useCallback(
+    (text: string) => {
+      setSearchText(text);
+      reset();
+    },
+    [reset],
+  );
 
   return (
     <Grid
@@ -83,7 +93,7 @@ function Command() {
           subtitle={`${hiddenCount} more`}
           actions={
             <ActionPanel>
-              <Action title="Show More" onAction={() => setDisplayLimit((limit) => limit + DISPLAY_LIMIT)} />
+              <Action title="Show More" onAction={showMore} />
             </ActionPanel>
           }
         />

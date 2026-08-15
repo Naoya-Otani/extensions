@@ -1,5 +1,10 @@
 # Slack Changelog
 
+## [Fix Search Messages crash in large workspaces] - {PR_MERGE_DATE}
+
+- Fix a "Command terminated after reaching the extension memory limit" crash in the **Search Messages** command. The "From" submenu is attached to every result, so listing every workspace member inside it built one action per member per result. Members are now listed only once the submenu is opened, narrowed by its own search field, and paginated with a "Show More" item.
+- **Search Emojis** no longer builds the full list of emoji names unless the AI fallback actually runs.
+
 ## [Fix Set Status crash in large workspaces] - {PR_MERGE_DATE}
 
 - Fix a "Command terminated after reaching the extension memory limit" crash in the **Set Status** command. The workspace emoji catalog is no longer loaded when the command opens — it is fetched only once the emoji picker or the status form is opened, or when the current status uses a custom emoji.
